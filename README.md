@@ -7,6 +7,10 @@
 - Deletes merged local branches from `git branch --merged`
 - Deletes merged remote branches from `git branch -r --merged`
 - Supports `--dry-run`
+- Supports `--list-protected`
+- Prompts for confirmation before deletion
+- Supports `--yes` to skip the confirmation prompt
+- Shows the current merge base before listing or deleting branches
 - Supports `--local-only` and `--remote-only`
 - Requires `--remote NAME` when multiple remotes exist
 - Protects `main`, `master`, and `develop` by default
@@ -88,6 +92,8 @@ git-branch-prune --dry-run
 git-branch-prune --local-only
 git-branch-prune --remote-only --remote origin
 git-branch-prune --protect release --protect staging
+git-branch-prune --list-protected
+git-branch-prune --yes
 ```
 
 By default, the tool:
@@ -96,7 +102,12 @@ By default, the tool:
 2. Runs `git fetch --prune`
 3. Finds merged local and remote branches
 4. Filters protected branches and remote HEAD aliases
-5. Deletes the remaining merged branches
+5. Prompts for confirmation
+6. Deletes the remaining merged branches
+
+Use `--list-protected` to print the effective protected branch list for the current repository and exit without fetching or deleting anything.
+Use `--yes` to skip the confirmation prompt when running non-interactively or scripting the command.
+The command prints the current merge base (`HEAD`, usually your checked-out branch) before showing protected branches or deletion candidates.
 
 ## Configuration
 

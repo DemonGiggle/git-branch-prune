@@ -10,13 +10,19 @@ func TestRunHelpExitsSuccessfully(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	exitCode := run([]string{"--help"}, &stdout, &stderr)
+	exitCode := run([]string{"--help"}, strings.NewReader(""), &stdout, &stderr)
 	if exitCode != 0 {
 		t.Fatalf("unexpected exit code %d", exitCode)
 	}
 
 	if !strings.Contains(stdout.String(), "Usage of git-branch-prune:") {
 		t.Fatalf("expected help output, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "-list-protected") {
+		t.Fatalf("expected --list-protected in help output, got %q", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "-yes") {
+		t.Fatalf("expected --yes in help output, got %q", stdout.String())
 	}
 
 	if stderr.Len() != 0 {

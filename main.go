@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"errors"
 	"flag"
 	"fmt"
@@ -39,6 +40,10 @@ type deletionPlan struct {
 	remoteBranches []remoteBranch
 }
 
+func (plan deletionPlan) hasDeletions() bool {
+	return len(plan.localBranches) > 0 || len(plan.remoteBranches) > 0
+}
+
 type stringList []string
 
 func (list *stringList) String() string {
@@ -63,10 +68,10 @@ type projectConfig struct {
 }
 
 func main() {
-	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+	os.Exit(run(os.Args[1:], os.Stdin, os.Stdout, os.Stderr))
 }
 
-func run(args []string, stdout io.Writer, stderr io.Writer) int {
+func run(args []string, stdin io.Reader, stdout io.Writer, stderr io.Writer) int {
 	options, err := parseFlags(args, stdout)
 	if err != nil {
 		if errors.Is(err, errHelpRequested) {
@@ -82,13 +87,24 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	if err := fetchPruned(repoRoot); err != nil {
+	currentBranch, err := getCurrentBranch(repoRoot)
+	if err != nil {
 		fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
+	mergeBase := describeMergeBase(currentBranch)
 
-	protectedBranches, err := resolveProtectedBranches(repoRoot, options.configPath, options.protect)
+	protectedBranches, err := resolveProtectedBranches(repoRoot, currentBranch, options.configPath, options.protect)
 	if err != nil {
+		fmt.Fprintln(stderr, "Error:", err)
+		return 1
+	}
+	if options.listProtected {
+		renderProtectedBranches(stdout, mergeBase, protectedBranches)
+		return 0
+	}
+
+	if err := fetchPruned(repoRoot); err != nil {
 		fmt.Fprintln(stderr, "Error:", err)
 		return 1
 	}
@@ -99,9 +115,23 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 		return 1
 	}
 
-	renderPlan(stdout, plan, options.dryRun)
+	renderPlan(stdout, mergeBase, plan, options.dryRun)
 	if options.dryRun {
 		return 0
+	}
+	if !plan.hasDeletions() {
+		return 0
+	}
+	if !options.skipConfirm {
+		confirmed, err := confirmDeletion(stdin, stdout)
+		if err != nil {
+			fmt.Fprintln(stderr, "Error:", err)
+			return 1
+		}
+		if !confirmed {
+			fmt.Fprintln(stdout, "Aborted.")
+			return 0
+		}
 	}
 
 	if err := applyDeletions(stdout, repoRoot, plan); err != nil {
@@ -113,12 +143,14 @@ func run(args []string, stdout io.Writer, stderr io.Writer) int {
 }
 
 type cliOptions struct {
-	dryRun       bool
-	deleteLocal  bool
-	deleteRemote bool
-	remotes      []string
-	protect      []string
-	configPath   string
+	dryRun        bool
+	deleteLocal   bool
+	deleteRemote  bool
+	listProtected bool
+	skipConfirm   bool
+	remotes       []string
+	protect       []string
+	configPath    string
 }
 
 func parseFlags(args []string, helpOutput io.Writer) (cliOptions, error) {
@@ -126,17 +158,21 @@ func parseFlags(args []string, helpOutput io.Writer) (cliOptions, error) {
 	flagSet.SetOutput(io.Discard)
 
 	var (
-		localOnly  bool
-		remoteOnly bool
-		remotes    stringList
-		protect    stringList
-		configPath string
-		dryRun     bool
+		localOnly     bool
+		remoteOnly    bool
+		remotes       stringList
+		protect       stringList
+		configPath    string
+		dryRun        bool
+		listProtected bool
+		skipConfirm   bool
 	)
 
 	flagSet.BoolVar(&localOnly, "local-only", false, "Delete only merged local branches.")
 	flagSet.BoolVar(&remoteOnly, "remote-only", false, "Delete only merged remote branches.")
 	flagSet.BoolVar(&dryRun, "dry-run", false, "Show what would be deleted without deleting anything.")
+	flagSet.BoolVar(&listProtected, "list-protected", false, "List the protected branches for this run and exit.")
+	flagSet.BoolVar(&skipConfirm, "yes", false, "Skip the confirmation prompt before deleting branches.")
 	flagSet.Var(&remotes, "remote", "Limit remote deletions to a specific remote. Repeat to allow more than one.")
 	flagSet.Var(&protect, "protect", "Add an extra protected branch name or remote ref for this run.")
 	flagSet.StringVar(&configPath, "config", defaultConfigPath(), "Configuration file path.")
@@ -167,12 +203,14 @@ func parseFlags(args []string, helpOutput io.Writer) (cliOptions, error) {
 	}
 
 	return cliOptions{
-		dryRun:       dryRun,
-		deleteLocal:  deleteLocal,
-		deleteRemote: deleteRemote,
-		remotes:      append([]string(nil), remotes...),
-		protect:      append([]string(nil), protect...),
-		configPath:   configPath,
+		dryRun:        dryRun,
+		deleteLocal:   deleteLocal,
+		deleteRemote:  deleteRemote,
+		listProtected: listProtected,
+		skipConfirm:   skipConfirm,
+		remotes:       append([]string(nil), remotes...),
+		protect:       append([]string(nil), protect...),
+		configPath:    configPath,
 	}, nil
 }
 
@@ -199,7 +237,7 @@ func fetchPruned(repoRoot string) error {
 	return err
 }
 
-func resolveProtectedBranches(repoRoot string, configPath string, cliProtected []string) (map[string]struct{}, error) {
+func resolveProtectedBranches(repoRoot string, currentBranch string, configPath string, cliProtected []string) (map[string]struct{}, error) {
 	config, err := loadConfig(configPath, repoRoot)
 	if err != nil {
 		return nil, err
@@ -231,10 +269,6 @@ func resolveProtectedBranches(repoRoot string, configPath string, cliProtected [
 		}
 	}
 
-	currentBranch, err := getCurrentBranch(repoRoot)
-	if err != nil {
-		return nil, err
-	}
 	if currentBranch != "" {
 		protected[currentBranch] = struct{}{}
 	}
@@ -477,12 +511,13 @@ func parseRemoteBranchOutput(output string) []remoteBranch {
 	return branches
 }
 
-func renderPlan(stdout io.Writer, plan deletionPlan, dryRun bool) {
+func renderPlan(stdout io.Writer, mergeBase string, plan deletionPlan, dryRun bool) {
 	action := "Deleting"
 	if dryRun {
 		action = "Would delete"
 	}
 
+	fmt.Fprintf(stdout, "Merge base: %s\n", mergeBase)
 	if len(plan.localBranches) == 0 && len(plan.remoteBranches) == 0 {
 		fmt.Fprintln(stdout, "No merged branches to delete.")
 		return
@@ -501,6 +536,40 @@ func renderPlan(stdout io.Writer, plan deletionPlan, dryRun bool) {
 			fmt.Fprintf(stdout, "  %s\n", branch.fullName())
 		}
 	}
+}
+
+func renderProtectedBranches(stdout io.Writer, mergeBase string, protectedBranches map[string]struct{}) {
+	branches := make([]string, 0, len(protectedBranches))
+	for branch := range protectedBranches {
+		branches = append(branches, branch)
+	}
+	slices.Sort(branches)
+
+	fmt.Fprintf(stdout, "Merge base: %s\n", mergeBase)
+	fmt.Fprintln(stdout, "Protected branches:")
+	for _, branch := range branches {
+		fmt.Fprintf(stdout, "  %s\n", branch)
+	}
+}
+
+func describeMergeBase(currentBranch string) string {
+	if currentBranch == "" {
+		return "HEAD (detached)"
+	}
+
+	return currentBranch
+}
+
+func confirmDeletion(stdin io.Reader, stdout io.Writer) (bool, error) {
+	fmt.Fprint(stdout, "Proceed with deleting these branches? [y/N]: ")
+
+	response, err := bufio.NewReader(stdin).ReadString('\n')
+	if err != nil && !errors.Is(err, io.EOF) {
+		return false, fmt.Errorf("read confirmation: %w", err)
+	}
+
+	answer := strings.ToLower(strings.TrimSpace(response))
+	return answer == "y" || answer == "yes", nil
 }
 
 func applyDeletions(stdout io.Writer, repoRoot string, plan deletionPlan) error {
