@@ -31,6 +31,11 @@ Or with the Makefile:
 make build
 ```
 
+That creates:
+
+- `bin/git-branch-prune`
+- `bin/git-brp` as a symlink to the same binary
+
 ## Install
 
 From a local checkout:
@@ -45,11 +50,23 @@ Or with the Makefile:
 make install
 ```
 
+`make install` installs `git-branch-prune` with `go install .` and also creates a `git-brp` symlink in the same Go bin directory.
+
 From GitHub after the repository is published:
 
 ```bash
 go install github.com/DemonGiggle/git-branch-prune@latest
 ```
+
+If you install with plain `go install`, you automatically get:
+
+- `git branch-prune` via the `git-branch-prune` executable name
+
+If you also want:
+
+- `git brp`
+
+use `make install` or create a `git-brp` symlink manually in a directory on `PATH`.
 
 ## Common development commands
 
@@ -65,6 +82,8 @@ make clean
 ## Usage
 
 ```bash
+git branch-prune --dry-run
+git brp --dry-run
 git-branch-prune --dry-run
 git-branch-prune --local-only
 git-branch-prune --remote-only --remote origin
