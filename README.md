@@ -25,6 +25,12 @@
 go build -o bin/git-branch-prune .
 ```
 
+Or with the Makefile:
+
+```bash
+make build
+```
+
 ## Install
 
 From a local checkout:
@@ -33,10 +39,27 @@ From a local checkout:
 go install .
 ```
 
+Or with the Makefile:
+
+```bash
+make install
+```
+
 From GitHub after the repository is published:
 
 ```bash
 go install github.com/DemonGiggle/git-branch-prune@latest
+```
+
+## Common development commands
+
+```bash
+make help
+make fmt
+make test
+make build
+make install
+make clean
 ```
 
 ## Usage
