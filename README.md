@@ -54,7 +54,7 @@ Or with the Makefile:
 make install
 ```
 
-`make install` installs `git-branch-prune` with `go install .` and also creates a `git-brp` symlink in the same Go bin directory.
+`make install` installs `git-branch-prune` with `go install .`, then prints the installed binary path and the `git-brp` symlink location in the same Go bin directory.
 
 From GitHub after the repository is published:
 

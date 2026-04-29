@@ -26,9 +26,12 @@ install:
 	$(GO) install .
 	@install_dir="$$( $(GO) env GOBIN )"; \
 	if [ -z "$$install_dir" ]; then install_dir="$$( $(GO) env GOPATH )/bin"; fi; \
+	binary_path="$$install_dir/$(BINARY)"; \
+	alias_path="$$install_dir/$(ALIAS)"; \
 	mkdir -p "$$install_dir"; \
-	ln -sfn $(BINARY) "$$install_dir/$(ALIAS)"; \
-	printf 'Installed alias: %s/%s -> %s\n' "$$install_dir" "$(ALIAS)" "$(BINARY)"
+	ln -sfn $(BINARY) "$$alias_path"; \
+	printf 'Installed binary: %s\n' "$$binary_path"; \
+	printf 'Linked alias: %s -> %s\n' "$$alias_path" "$(BINARY)"
 
 fmt:
 	$(GO) fmt ./...
